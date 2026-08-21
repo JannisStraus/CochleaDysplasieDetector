@@ -1,0 +1,92 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        language_version: python3.12
+        additional_dependencies: [types-requests]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [html, css, json, javascript, xml, yaml]
+        exclude: node_modules
+
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.20.0
+    hooks:
+      - id: pyproject-fmt
+        types: [toml]
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.21.0
+    hooks:
+      - id: markdownlint-cli2
+        args: [--fix]
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        types: [markdown]
+
+  - repo: local
+    hooks:
+      - id: export-requirements
+        name: Export requirements
+        entry: uv
+        args:
+          [
+            export,
+            --format,
+            requirements.txt,
+            --locked,
+            --no-dev,
+            --no-emit-local,
+            --no-hashes,
+            --output-file,
+            requirements.txt,
+          ]
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Security
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        files: . # Always scan everything for secrets
+
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.152.0
+    hooks:
+      - id: semgrep
+        pass_filenames: false
+        args:
+          - --config
+          - p/ci
+          - --config
+          - p/python
+          - --error
+          - --skip-unknown-extensions
+          - cochlea_detector
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace

@@ -1,0 +1,10 @@
+{
+  "default": "v0.1.0",
+  "releases": {
+    "v0.1.0": {
+      "url": "https://github.com/JannisStraus/CochleaDysplasieDetector/releases/download/v0.1.0/weights.zip",
+      "sha256": "0bcef89cde8448fa992227b2745222abe367315c333c270c3374445749e07221",
+      "n_folds": 1
+    }
+  }
+}

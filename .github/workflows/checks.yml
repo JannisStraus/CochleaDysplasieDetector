@@ -1,0 +1,90 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / python${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      # Needed by the requirements.txt commit step below.
+      contents: write
+    env:
+      # Every uv call picks this up, so no --python flag is needed anywhere.
+      UV_PYTHON: ${{ matrix.python-version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          # Narrower than the default glob, which also watches requirements.txt
+          # and would be invalidated by this workflow's own commits.
+          cache-dependency-glob: uv.lock
+
+      - name: Cache model weights and test images
+        uses: actions/cache@v6
+        with:
+          # weights.zip is ~630 MB; without this every run re-downloads it.
+          path: ~/.cache/CochleaDysplasieDetector
+          key: cochlea-data-${{ runner.os }}-${{ hashFiles('cochlea_detector/models.json') }}
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run pytest with coverage
+        run: uv run pytest
+
+      - name: CLI smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run cochleadetector -h
+          uv run cochleadetector -v
+
+      - name: Cache pre-commit environments
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        run: uv run pre-commit run -a --show-diff-on-failure
+
+      - name: Send coverage results
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}

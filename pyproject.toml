@@ -1,0 +1,103 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling>=1.25" ]
+
+[project]
+name = "cochlea-detector"
+version = "0.1.0"
+description = "Detect and classify Cochlea Dysplasie in CT images."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+  { name = "Jannis Straus", email = "jannis.straus@uk-essen.de" },
+]
+requires-python = ">=3.11,<3.15"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "opencv-python>=4.11.0.86,<4.12",
+  "pandas>=2.2.3,<3",
+  "requests>=2.32.3,<3",
+  "torch>=2,<3",
+  "tqdm>=4.67.1,<5",
+  "ultralytics>=8.3.235,<8.4",
+]
+scripts.cochleadetector = "cochlea_detector.main:main"
+
+[dependency-groups]
+dev = [
+  "pre-commit>=4.5",
+  "pytest>=9.0.2",
+  "pytest-cov>=7",
+]
+
+[tool.uv]
+default-groups = []
+
+[tool.ruff]
+target-version = "py311"
+# Same as Black
+line-length = 88
+lint.select = [
+  "ARG",  # Unused arguments
+  "B",    # flake8-bugbear
+  "C",    # flake8-comprehensions
+  "D401", # First line of docstring should be in imperative mood
+  "E",    # pycodestyle errors
+  "EXE",  # flake8-executable
+  "F",    # pyflakes
+  "G",    # flake8-logging-format
+  "I",    # isort
+  "N",    # Naming conventions
+  "PERF", # perflint
+  "PL",   # pylint
+  "PTH",  # pathlib usage
+  "RUF",  # ruff
+  "S",    # flake8-bandit (security)
+  "SIM",  # flake8-simplify
+  "UP",   # PyUpgrade
+  "W",    # pycodestyle warnings
+]
+lint.ignore = [
+  "N813", # Camelcase imported as lowercase
+  "PLR",  # pylint refactoring
+]
+lint.unfixable = [
+  "F401", # Do not fix unused imports, it's annoying during development
+]
+lint.pydocstyle.convention = "google"
+
+[tool.mypy]
+# Ensure full coverage
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+# Restrict dynamic typing
+disallow_any_generics = true
+disallow_subclassing_any = true
+warn_return_any = true
+# Know exactly what you're doing
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+warn_unreachable = true
+show_error_codes = true
+
+[tool.pytest]
+ini_options.addopts = "--cov --cov-report=term-missing --cov-report=xml"
+ini_options.testpaths = [ "tests" ]
+
+[tool.coverage]
+run.branch = true
+run.relative_files = true
+run.source = [ "cochlea_detector" ]

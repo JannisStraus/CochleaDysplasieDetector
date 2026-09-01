@@ -23,7 +23,7 @@ class ChecksumError(RuntimeError):
 class ModelRelease:
     url: str
     sha256: str
-    n_folds: int = 5
+    n_folds: int
 
 
 @lru_cache(maxsize=1)
@@ -35,7 +35,7 @@ def load_registry() -> tuple[str, dict[str, ModelRelease]]:
         name: ModelRelease(
             url=spec["url"],
             sha256=spec["sha256"],
-            n_folds=spec.get("n_folds", 5),
+            n_folds=spec["n_folds"],
         )
         for name, spec in raw["releases"].items()
     }
@@ -121,8 +121,6 @@ def download_weights(release: str | None = None) -> Path:
     default, _ = load_registry()
     name = release or default
     model = resolve_release(name)
-    # Keyed by release so newly published weights are never shadowed by an
-    # older download that happens to have the same fold layout.
     weights_dir = get_cache_dir() / "CochleaDysplasieDetector" / name / "weights"
     if not weights_exist(weights_dir, model.n_folds):
         logger.info("Downloading weights release '%s'.", name)

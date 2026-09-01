@@ -38,6 +38,7 @@ networkx==3.6.1
     # via torch
 numpy==2.4.6 ; python_full_version < '3.12'
     # via
+    #   cochlea-detector
     #   contourpy
     #   matplotlib
     #   opencv-python
@@ -48,6 +49,7 @@ numpy==2.4.6 ; python_full_version < '3.12'
     #   ultralytics-thop
 numpy==2.5.2 ; python_full_version >= '3.12'
     # via
+    #   cochlea-detector
     #   contourpy
     #   matplotlib
     #   opencv-python
@@ -136,6 +138,8 @@ scipy==1.18.0 ; python_full_version >= '3.12'
     # via ultralytics
 setuptools==84.0.0
     # via torch
+simpleitk==2.5.6
+    # via cochlea-detector
 six==1.17.0
     # via python-dateutil
 sympy==1.14.0

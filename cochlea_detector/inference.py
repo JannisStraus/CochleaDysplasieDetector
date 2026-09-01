@@ -1,5 +1,7 @@
+import contextlib
 import logging
-from collections import defaultdict
+import tempfile
+from collections import Counter, defaultdict
 from functools import lru_cache
 from pathlib import Path
 
@@ -8,20 +10,26 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from cochlea_detector.download import download_weights, resolve_release
-from cochlea_detector.utils import BBox, save_bbox
+from cochlea_detector.utils import nifti_to_png, tensor_to_list
 
 ALLOWED_FORMAT = {
-    ".png",
-    ".jpg",
-    ".jpeg",
+    ".nii",
+    ".gz",
 }
+CLASSES = [
+    "dysplasie_re",
+    "dysplasie_li",
+    "normal_re",
+    "normal_li",
+]
+MAP_CLASSES = dict(enumerate(CLASSES))
 
 logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def load_models(weights_dir: Path, n_folds: int = 5) -> tuple[YOLO, ...]:
-    logger.info("Loading %s folds from '%s'.", n_folds, weights_dir)
+def load_model(weights_dir: Path, n_folds: int = 5) -> tuple[YOLO, ...]:
+    logger.info("Loading %s folds from model %s...", n_folds, weights_dir)
     return tuple(
         YOLO(weights_dir / f"fold_{i}" / "best.pt", verbose=True)
         for i in range(n_folds)
@@ -29,75 +37,94 @@ def load_models(weights_dir: Path, n_folds: int = 5) -> tuple[YOLO, ...]:
 
 
 def measure_results(
-    models: tuple[YOLO, ...], image_path: str | Path, device: str | None = None
-) -> tuple[dict[str, str | float], BBox]:
-    confidence_accumulator: dict[str, float] = defaultdict(float)
-    result_dict: dict[str, str | float] = {}
-    bbox_dict: dict[str, tuple[BBox, float]] = {}
-    for i, model in enumerate(models):
-        results = model(image_path, verbose=False, device=device)
-        pred_cls = "Nothing"
-        pred_conf = 0.0
-        pred_bbox: BBox = None
-        for result in results:
-            if len(result.boxes.cls) == 0:
-                continue
+    models: tuple[YOLO, ...], pngs: list[Path], device: str | None = None
+) -> tuple[str | None, str | None]:
+    # TODO: add multiple fold logic
+    n_folds = len(models)
+    if len(models) > 1:
+        raise NotImplementedError(f"Models with {n_folds} folds are not supported yet.")
+    model = models[0]
+    results = model(pngs, conf=0.2, verbose=False, device=device)
+    right_classes = []
+    left_classes = []
+    for result in results:
+        boxes = result.boxes
+        if boxes is None or boxes.conf.numel() == 0:
+            continue
 
-            tmp_conf = float(result.boxes.conf.cpu().numpy()[0])
-            if tmp_conf > pred_conf:
-                tmp_cls = int(result.boxes.cls.cpu().numpy()[0])
-                tmp_bbox = result.boxes.xyxy.cpu().numpy()[0]
-                tmp_bbox = [round(i) for i in tmp_bbox]
-                pred_cls = model.names[tmp_cls]
-                pred_conf = tmp_conf
-                pred_bbox = tuple(tmp_bbox[:4])
-            else:
-                print(image_path)
-        confidence_accumulator[pred_cls] += pred_conf
-        result_dict[f"prediction_fold_{i}"] = pred_cls
-        result_dict[f"confidence_fold_{i}"] = pred_conf
-        if pred_cls not in bbox_dict or bbox_dict[pred_cls][1] < pred_conf:
-            bbox_dict[pred_cls] = (pred_bbox, pred_conf)
+        confs_list = tensor_to_list(boxes.conf, float)
+        classes_list = tensor_to_list(boxes.cls, int)
 
-    final_prediction = max(confidence_accumulator, key=confidence_accumulator.get)  # type: ignore
-    final_confidence = confidence_accumulator[final_prediction] / len(models)
-    result_dict["prediction"] = final_prediction
-    result_dict["confidence"] = final_confidence
-    return result_dict, bbox_dict[final_prediction][0]
+        # build detection dicts per slice
+        detections = [
+            {"cls": cls, "conf": conf, "class_name": MAP_CLASSES[cls]}
+            for cls, conf in zip(classes_list, confs_list, strict=False)
+            if cls in MAP_CLASSES
+        ]
+
+        # select best right (even) and best left (odd)
+        right_dets = [d for d in detections if d["cls"] % 2 == 0]
+        left_dets = [d for d in detections if d["cls"] % 2 == 1]
+
+        best_right = max(right_dets, key=lambda d: d["conf"]) if right_dets else None
+        best_left = max(left_dets, key=lambda d: d["conf"]) if left_dets else None
+
+        if best_right:
+            right_classes.append(best_right["class_name"])
+        if best_left:
+            left_classes.append(best_left["class_name"])
+
+    # determine most frequent class per side
+    most_common_right = Counter(right_classes).most_common(1)
+    most_common_left = Counter(left_classes).most_common(1)
+    pred_right = most_common_right[0][0] if most_common_right else None
+    pred_left = most_common_left[0][0] if most_common_left else None
+
+    return pred_right, pred_left
 
 
 def infer(
     input_file_or_dir: str | Path,
     output_dir: str | Path,
     device: str | None = None,
+    save_pngs: bool = True,
 ) -> None:
     input_file_or_dir = Path(input_file_or_dir)
     output_dir = Path(output_dir)
     weights_dir = download_weights()
-    models = load_models(weights_dir, resolve_release().n_folds)
+    model = load_model(weights_dir, resolve_release().n_folds)
     output_dir.mkdir(parents=True, exist_ok=True)
-    result_dict: dict[str, list[str | float]] = defaultdict(list)
+    result_dict: dict[str, list[str | float | None]] = defaultdict(list)
 
     if input_file_or_dir.is_file():
         files = [input_file_or_dir]
     else:
         files = list(input_file_or_dir.iterdir())
-    for p in tqdm(files, desc="Predicting"):
-        image_path = Path(p)
-        if not image_path.is_file() or image_path.suffix.lower() not in ALLOWED_FORMAT:
-            continue
-        result_dict["image_name"].append(image_path.name)
-        current_dict, bbox = measure_results(models, image_path, device)
-        for k, v in current_dict.items():
-            result_dict[k].append(v)
 
-        # BBOX
-        save_bbox(
-            image_path,
-            output_dir / image_path.name,
-            bbox,
-            str(current_dict["prediction"]),
-        )
+    for image_path in tqdm(files, desc="Predicting"):
+        name = image_path.name
+        if not image_path.is_file() or image_path.suffix.lower() not in ALLOWED_FORMAT:
+            logger.info("Skipping %s", name)
+            continue
+
+        # Preprocessing
+        with contextlib.ExitStack() as stack:
+            if save_pngs:
+                png_dir = output_dir / "pngs" / image_path.name
+                png_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                png_dir = Path(
+                    stack.enter_context(tempfile.TemporaryDirectory(prefix="cochlea-"))
+                )
+            pngs = nifti_to_png(image_path, png_dir)
+
+            # Inference
+            pred_right, pred_left = measure_results(model, pngs, device)
+
+            result_dict["image_name"].append(name)
+            result_dict["pred_right"].append(pred_right)
+            result_dict["pred_left"].append(pred_left)
+        break
 
     # CSV
     result_df = pd.DataFrame(result_dict)

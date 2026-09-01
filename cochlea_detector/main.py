@@ -1,5 +1,6 @@
 import argparse
 import logging
+from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
 
@@ -13,7 +14,7 @@ def _existing(path_str: str) -> Path:
     return path
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Detect and classify Cochlea Dysplasie in CT images."
     )
@@ -30,7 +31,7 @@ def main() -> None:
         "-o",
         "--output",
         type=Path,
-        required=True,
+        required=False,
         help="Path to save detection results.",
     )
     parser.add_argument(
@@ -39,7 +40,20 @@ def main() -> None:
         required=False,
         help="Device for inference (e.g. 'cuda' or 'gpu').",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--verbose",
+        required=False,
+        action="store_true",
+        default=False,
+        help="",
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(asctime)s | %(levelname)-8s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     infer(
         args.input,
@@ -49,5 +63,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     main()

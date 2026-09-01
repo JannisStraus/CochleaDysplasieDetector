@@ -24,9 +24,11 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "numpy>=2.4.6",
   "opencv-python>=4.11.0.86,<4.12",
   "pandas>=2.2.3,<3",
   "requests>=2.32.3,<3",
+  "simpleitk>=2.5.6",
   "torch>=2,<3",
   "tqdm>=4.67.1,<5",
   "ultralytics>=8.3.235,<8.4",

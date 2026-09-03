@@ -25,21 +25,24 @@ classifiers = [
 ]
 dependencies = [
   "numpy>=2.4.6",
-  "opencv-python>=4.11.0.86,<4.12",
-  "pandas>=2.2.3,<3",
+  "pillow>=12.3",
   "requests>=2.32.3,<3",
   "simpleitk>=2.5.6",
-  "torch>=2,<3",
+  "torch>=2,<2.11",            # TODO <3
   "tqdm>=4.67.1,<5",
   "ultralytics>=8.3.235,<8.4",
 ]
+optional-dependencies.nnunet = [ "nnunetv2>=2.8.1" ]
 scripts.cochleadetector = "cochlea_detector.main:main"
 
 [dependency-groups]
 dev = [
+  "mypy>=2.3.1",
   "pre-commit>=4.5",
   "pytest>=9.0.2",
   "pytest-cov>=7",
+  "types-requests>=2.32",
+  "types-tqdm>=4.67",
 ]
 
 [tool.uv]
@@ -94,6 +97,9 @@ warn_unused_ignores = true
 warn_unused_configs = true
 warn_unreachable = true
 show_error_codes = true
+overrides = [
+  { module = [ "nnunetv2.*" ], ignore_missing_imports = true },
+]
 
 [tool.pytest]
 ini_options.addopts = "--cov --cov-report=term-missing --cov-report=xml"

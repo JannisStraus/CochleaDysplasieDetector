@@ -19,45 +19,78 @@ class ChecksumError(RuntimeError):
     pass
 
 
+class WeightsLayoutError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ModelRelease:
     url: str
-    sha256: str
+    sha256: str | None
     n_folds: int
+    checkpoint: str
+
+
+@dataclass(frozen=True)
+class ModelEntry:
+    default: str
+    releases: dict[str, ModelRelease]
 
 
 @lru_cache(maxsize=1)
-def load_registry() -> tuple[str, dict[str, ModelRelease]]:
+def load_registry() -> dict[str, ModelEntry]:
     raw = json.loads(
         files("cochlea_detector").joinpath("models.json").read_text("utf-8")
     )
-    releases = {
-        name: ModelRelease(
-            url=spec["url"],
-            sha256=spec["sha256"],
-            n_folds=spec["n_folds"],
+    return {
+        model: ModelEntry(
+            default=entry["default"],
+            releases={
+                name: ModelRelease(
+                    url=spec["url"],
+                    sha256=spec["sha256"],
+                    n_folds=spec["n_folds"],
+                    checkpoint=spec["checkpoint"],
+                )
+                for name, spec in entry["releases"].items()
+            },
         )
-        for name, spec in raw["releases"].items()
+        for model, entry in raw.items()
     }
-    return raw["default"], releases
 
 
-def resolve_release(release: str | None = None) -> ModelRelease:
-    default, releases = load_registry()
-    name = release or default
+def available_models() -> tuple[str, ...]:
+    return tuple(sorted(load_registry()))
+
+
+def resolve_model(model: str = "yolo") -> ModelEntry:
+    registry = load_registry()
     try:
-        return releases[name]
+        return registry[model]
     except KeyError:
-        known = ", ".join(sorted(releases))
+        known = ", ".join(sorted(registry))
         raise ValueError(
-            f"Unknown weights release '{name}'. Available releases: {known}."
+            f"Unknown model '{model}'. Available models: {known}."
         ) from None
 
 
-def weights_exist(weights_dir: str | Path, n_folds: int = 5) -> bool:
+def resolve_release(model: str = "yolo", release: str | None = None) -> ModelRelease:
+    entry = resolve_model(model)
+    name = release or entry.default
+    try:
+        return entry.releases[name]
+    except KeyError:
+        known = ", ".join(sorted(entry.releases))
+        raise ValueError(
+            f"Unknown weights release '{name}' for model '{model}'. "
+            f"Available releases: {known}."
+        ) from None
+
+
+def weights_exist(weights_dir: str | Path, n_folds: int, checkpoint: str) -> bool:
     weights_dir = Path(weights_dir)
-    return all(
-        (weights_dir / f"fold_{i}" / "best.pt").is_file() for i in range(n_folds)
+    return n_folds > 0 and all(
+        (weights_dir / f"fold_{i}" / checkpoint).is_file() for i in range(n_folds)
     )
 
 
@@ -75,6 +108,8 @@ def download(
     sha256: str | None = None,
 ) -> None:
     dst_file = Path(dst_file)
+    if sha256 is None:
+        logger.warning("No checksum published for '%s'.", url)
     response = requests.get(url, params=params, stream=True, timeout=20.0)
     response.raise_for_status()
     total_size = int(response.headers.get("content-length", 0))
@@ -117,12 +152,22 @@ def download_and_unzip(
     return dst_dir
 
 
-def download_weights(release: str | None = None) -> Path:
-    default, _ = load_registry()
-    name = release or default
-    model = resolve_release(name)
-    weights_dir = get_cache_dir() / "CochleaDysplasieDetector" / name / "weights"
-    if not weights_exist(weights_dir, model.n_folds):
-        logger.info("Downloading weights release '%s'.", name)
-        download_and_unzip(weights_dir, model.url, sha256=model.sha256)
+def download_weights(model: str = "yolo", release: str | None = None) -> Path:
+    entry = resolve_model(model)
+    name = release or entry.default
+    spec = resolve_release(model, name)
+    weights_dir = (
+        get_cache_dir() / "CochleaDysplasieDetector" / model / name / "weights"
+    )
+    if weights_exist(weights_dir, spec.n_folds, spec.checkpoint):
+        return weights_dir
+
+    logger.info("Downloading %s weights release '%s'.", model, name)
+    download_and_unzip(weights_dir, spec.url, sha256=spec.sha256)
+    if not weights_exist(weights_dir, spec.n_folds, spec.checkpoint):
+        raise WeightsLayoutError(
+            f"The archive for {model} release '{name}' did not provide "
+            f"fold_0..fold_{spec.n_folds - 1}/{spec.checkpoint} under "
+            f"'{weights_dir}'. The release layout does not match models.json."
+        )
     return weights_dir

@@ -6,12 +6,21 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.19.1
+  #   hooks:
+  #     - id: mypy
+  #       language_version: python3.12
+  #       additional_dependencies: [types-requests]
+
+  - repo: local
     hooks:
       - id: mypy
-        language_version: python3.12
-        additional_dependencies: [types-requests]
+        name: mypy
+        entry: uv run mypy
+        args: [cochlea_detector, tests]
+        language: system
+        pass_filenames: false
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
@@ -48,6 +57,7 @@ repos:
             export,
             --format,
             requirements.txt,
+            --all-extras,
             --locked,
             --no-dev,
             --no-emit-local,
